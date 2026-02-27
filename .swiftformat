@@ -1,0 +1,25 @@
+# SwiftFormat configuration for Peak
+# https://github.com/nicklockwood/SwiftFormat
+
+# Swift version (matches Package.swift swift-tools-version)
+--swift-version 6.2
+
+# Line length (match previous SwiftLint preference)
+--max-width 120
+
+# Wrap function/initializer arguments when they exceed line length
+--wrap-arguments before-first
+--wrap-collections before-first
+
+# Paths to exclude
+--exclude .build
+--exclude Public
+--exclude .swiftpm
+
+# Indentation
+--indent 2
+--tabwidth 2
+
+# Other common style choices
+--trimwhitespace always
+--allman false

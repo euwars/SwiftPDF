@@ -1,0 +1,4 @@
+services:
+  test:
+    build: .
+    command: ["swift-pdf-tests"]
