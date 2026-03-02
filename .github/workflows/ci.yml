@@ -1,0 +1,56 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        include:
+          - os: macos-15
+            swift: "6.2"
+          - os: ubuntu-24.04
+            swift: "6.2"
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Swift (Linux)
+        if: runner.os == 'Linux'
+        uses: swift-actions/setup-swift@v2
+        with:
+          swift-version: ${{ matrix.swift }}
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install vips
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvips-tools zlib1g-dev
+
+      - name: Build
+        run: swift build
+
+      - name: Run tests
+        run: swift run SwiftPDFTests
+
+      - name: Verify vips PDF support
+        run: |
+          echo "%PDF-1.4
+          1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj
+          2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 /MediaBox [0 0 72 72] >> endobj
+          3 0 obj << /Type /Page /Parent 2 0 R >> endobj
+          xref
+          0 4
+          0000000000 65535 f
+          0000000009 00000 n
+          0000000058 00000 n
+          0000000137 00000 n
+          trailer << /Size 4 /Root 1 0 R >>
+          startxref
+          189
+          %%EOF" > /tmp/test_ci.pdf
+          vips copy "/tmp/test_ci.pdf[dpi=72,page=0]" /tmp/test_ci.png
+          test -f /tmp/test_ci.png && echo "vips PDF rendering works"

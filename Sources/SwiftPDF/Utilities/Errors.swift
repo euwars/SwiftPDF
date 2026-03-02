@@ -10,6 +10,7 @@ public enum PDFError: Error, CustomStringConvertible {
   case decompressionError(String)
   case writeError(String)
   case fileError(String)
+  case renderError(String)
 
   public var description: String {
     switch self {
@@ -22,6 +23,7 @@ public enum PDFError: Error, CustomStringConvertible {
     case let .decompressionError(msg): "Decompression error: \(msg)"
     case let .writeError(msg): "Write error: \(msg)"
     case let .fileError(msg): "File error: \(msg)"
+    case let .renderError(msg): "Render error: \(msg)"
     }
   }
 }

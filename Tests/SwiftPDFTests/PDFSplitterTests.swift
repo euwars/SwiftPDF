@@ -217,6 +217,74 @@ struct TestRunner {
       try assertThrows(splitter.pageCount(in: pdf), "Should throw for encrypted PDF")
     }
 
+    // MARK: - Render Tests
+
+    let vipsAvailable = isVipsAvailable()
+    if vipsAvailable {
+      test("renderSinglePage") {
+        let pdf = makeTestPDF()
+        let pngData = try splitter.renderPage(from: pdf, at: 0)
+        // PNG magic bytes: 0x89 P N G
+        check(pngData.count > 8, "PNG data should not be empty")
+        check(
+          pngData[0] == 0x89 && pngData[1] == 0x50 && pngData[2] == 0x4E && pngData[3] == 0x47,
+          "Output should be a valid PNG (magic bytes)"
+        )
+      }
+
+      test("renderSinglePageInvalidIndex") {
+        let pdf = makeTestPDF()
+        try assertThrows(splitter.renderPage(from: pdf, at: 99))
+      }
+
+      test("renderAllPages") {
+        let pdf = makeTestPDF()
+        let pngs = try splitter.renderPages(pdfData: pdf)
+        check(pngs.count == 2, "Expected 2 PNGs, got \(pngs.count)")
+        for (i, png) in pngs.enumerated() {
+          check(
+            png[0] == 0x89 && png[1] == 0x50,
+            "Page \(i) should be a PNG"
+          )
+        }
+      }
+
+      test("renderToFiles") {
+        let pdf = makeTestPDF()
+        let tempDir = NSTemporaryDirectory() + "SwiftPDFRenderTest_\(UUID().uuidString)"
+        let inputPath = tempDir + "/test.pdf"
+
+        let fm = FileManager.default
+        try fm.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+        fm.createFile(atPath: inputPath, contents: pdf)
+
+        defer { try? fm.removeItem(atPath: tempDir) }
+
+        let outputDir = tempDir + "/output"
+        let paths = try splitter.renderPages(inputPath: inputPath, outputDirectory: outputDir)
+
+        check(paths.count == 2, "Expected 2 output paths, got \(paths.count)")
+        for path in paths {
+          check(fm.fileExists(atPath: path), "PNG file should exist: \(path)")
+          check(path.hasSuffix(".png"), "Output should be .png: \(path)")
+          if let data = fm.contents(atPath: path) {
+            check(data[0] == 0x89 && data[1] == 0x50, "File should be a PNG")
+          } else {
+            check(false, "Cannot read output file: \(path)")
+          }
+        }
+      }
+
+      test("renderCustomDPI") {
+        let pdf = makeTestPDF()
+        let png72 = try splitter.renderPage(from: pdf, at: 0, dpi: 72)
+        let png300 = try splitter.renderPage(from: pdf, at: 0, dpi: 300)
+        check(png300.count > png72.count, "300 DPI PNG should be larger than 72 DPI")
+      }
+    } else {
+      print("\nSkipping render tests: vips not installed")
+    }
+
     // MARK: - Summary
 
     print("\n========================================")
@@ -228,6 +296,21 @@ struct TestRunner {
 
     if failed > 0 || realFileTestsFailed {
       exit(1)
+    }
+  }
+
+  static func isVipsAvailable() -> Bool {
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["vips", "--version"]
+    process.standardOutput = FileHandle.nullDevice
+    process.standardError = FileHandle.nullDevice
+    do {
+      try process.run()
+      process.waitUntilExit()
+      return process.terminationStatus == 0
+    } catch {
+      return false
     }
   }
 }
