@@ -7,9 +7,9 @@ jobs:
       matrix:
         include:
           - os: macos-15
-            swift: "6.2"
+            swift: "6.1"
           - os: ubuntu-24.04
-            swift: "6.2"
+            swift: "6.1"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
