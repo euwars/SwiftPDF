@@ -7,6 +7,38 @@ import SwiftPDF
 
 nonisolated(unsafe) var realFileTestsFailed = false
 
+private final class TestState: @unchecked Sendable {
+  let lock = NSLock()
+  var totalPassed = 0
+  var totalFailed = 0
+  var totalSkipped = 0
+  var errorMessages: [(file: String, error: String)] = []
+  var shouldStop = false
+
+  func record(_ result: FileTestResult, file: String) {
+    lock.lock()
+    defer { lock.unlock() }
+    switch result {
+    case .passed:
+      totalPassed += 1
+    case .skipped:
+      totalSkipped += 1
+    case let .failed(msg):
+      totalFailed += 1
+      errorMessages.append((file, msg))
+      if totalFailed >= 10 {
+        shouldStop = true
+      }
+    }
+  }
+
+  func isStopped() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return shouldStop
+  }
+}
+
 func runRealFileTests() {
   setenv("CG_PDF_VERBOSE", "1", 1)
   let testFilesDir: String = {
@@ -35,25 +67,14 @@ func runRealFileTests() {
   print("\nReal PDF File Tests (\(files.count) files)")
   print("========================================")
 
-  // Thread-safe counters
-  let lock = NSLock()
-  var totalPassed = 0
-  var totalFailed = 0
-  var totalSkipped = 0
-  var errorMessages: [(file: String, error: String)] = []
-  var shouldStop = false
-
+  let state = TestState()
   let concurrency = ProcessInfo.processInfo.activeProcessorCount
   let group = DispatchGroup()
   let queue = DispatchQueue(label: "pdf-tests", attributes: .concurrent)
   let semaphore = DispatchSemaphore(value: concurrency)
 
   for file in files {
-    // Check early exit
-    lock.lock()
-    let stop = shouldStop
-    lock.unlock()
-    if stop { break }
+    if state.isStopped() { break }
 
     semaphore.wait()
     group.enter()
@@ -64,49 +85,29 @@ func runRealFileTests() {
         group.leave()
       }
 
-      // Check early exit inside worker too
-      lock.lock()
-      let stopNow = shouldStop
-      lock.unlock()
-      if stopNow { return }
+      if state.isStopped() { return }
 
       let path = (testFilesDir as NSString).appendingPathComponent(file)
-      guard let data = fm.contents(atPath: path) else {
-        lock.lock()
-        totalSkipped += 1
-        lock.unlock()
+      guard let data = FileManager.default.contents(atPath: path) else {
+        state.record(.skipped, file: file)
         return
       }
 
       let result = testSingleFile(file: file, data: data)
-
-      lock.lock()
-      switch result {
-      case .passed:
-        totalPassed += 1
-      case .skipped:
-        totalSkipped += 1
-      case let .failed(msg):
-        totalFailed += 1
-        errorMessages.append((file, msg))
-        if totalFailed >= 10 {
-          shouldStop = true
-        }
-      }
-      lock.unlock()
+      state.record(result, file: file)
     }
   }
 
   group.wait()
 
-  if shouldStop {
-    print("  ... stopped early after \(totalFailed) failures")
+  if state.shouldStop {
+    print("  ... stopped early after \(state.totalFailed) failures")
   }
 
   // Print errors
-  for (i, err) in errorMessages.sorted(by: { $0.file < $1.file }).enumerated() {
+  for (i, err) in state.errorMessages.sorted(by: { $0.file < $1.file }).enumerated() {
     if i >= 30 {
-      print("  ... and \(errorMessages.count - 30) more errors")
+      print("  ... and \(state.errorMessages.count - 30) more errors")
       break
     }
     print("  FAIL [\(err.file)] \(err.error)")
@@ -114,11 +115,11 @@ func runRealFileTests() {
 
   print("\n========================================")
   print(
-    "Real file results: \(totalPassed) passed, \(totalFailed) failed, \(totalSkipped) skipped (of \(files.count) files)"
+    "Real file results: \(state.totalPassed) passed, \(state.totalFailed) failed, \(state.totalSkipped) skipped (of \(files.count) files)"
   )
   print("========================================")
 
-  if totalFailed > 0 {
+  if state.totalFailed > 0 {
     realFileTestsFailed = true
   }
 }

@@ -1,13 +1,14 @@
 # SwiftPDF
 
-A fast, pure-Swift PDF splitter. No dependencies on PDFKit or CoreGraphics — works on macOS, iOS, tvOS, watchOS, visionOS, and Linux.
+A fast, pure-Swift PDF toolkit. No dependencies on PDFKit or CoreGraphics — works on macOS, iOS, tvOS, watchOS, visionOS, and Linux.
 
 ## Features
 
 - Split a PDF into individual single-page PDFs
 - Extract a specific page by index
 - Get page count without extracting
-- Async splitting with configurable concurrency
+- Render PDF pages to PNG images (via libvips)
+- Async splitting and rendering with configurable concurrency
 - Handles malformed PDFs, junk headers, broken xref tables
 - Detects and rejects encrypted PDFs
 - Thread-safe (`Sendable`)
@@ -29,6 +30,9 @@ Then add `"SwiftPDF"` to your target's dependencies.
 - Swift 6.2+
 - macOS 15+ / iOS 18+ / tvOS 18+ / watchOS 11+ / visionOS 2+
 - zlib (included on Apple platforms; on Linux install `zlib1g-dev`)
+- **For PNG rendering only:** [libvips](https://www.libvips.org/) with PDF support
+  - macOS: `brew install vips`
+  - Linux: `apt install libvips-tools`
 
 ## Usage
 
@@ -54,6 +58,27 @@ let outputFiles = try splitter.split(
 )
 ```
 
+### Rendering (PDF → PNG)
+
+Render PDF pages to PNG images using libvips. Requires `vips` CLI to be installed (see Requirements).
+
+```swift
+// Render a single page to PNG (0-indexed)
+let pngData: Data = try pdf.renderPage(from: pdfData, at: 0)
+
+// Render a single page at custom DPI (default is 144)
+let hiRes: Data = try pdf.renderPage(from: pdfData, at: 0, dpi: 300)
+
+// Render all pages to PNG data
+let pngs: [Data] = try pdf.renderPages(pdfData: pdfData)
+
+// Render all pages to PNG files in a directory
+let pngPaths = try pdf.renderPages(
+  inputPath: "document.pdf",
+  outputDirectory: "output/"
+)
+```
+
 ### Async
 
 ```swift
@@ -62,6 +87,9 @@ let pages = try await splitter.split(pdfData: pdfData)
 
 // Limit concurrency
 let pages = try await splitter.split(pdfData: pdfData, concurrency: 4)
+
+// Concurrent rendering
+let pngs = try await pdf.renderPages(pdfData: pdfData, concurrency: 4)
 ```
 
 ### Error Handling
@@ -75,6 +103,8 @@ do {
     print("Cannot split encrypted PDFs")
   case .invalidPDF(let reason):
     print("Invalid PDF: \(reason)")
+  case .renderError(let reason):
+    print("Render failed: \(reason)")
   default:
     print("Error: \(error)")
   }

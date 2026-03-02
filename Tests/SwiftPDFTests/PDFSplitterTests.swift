@@ -157,7 +157,7 @@ struct TestRunner {
 
       let fm = FileManager.default
       try fm.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
-      fm.createFile(atPath: inputPath, contents: pdf)
+      _ = fm.createFile(atPath: inputPath, contents: pdf)
 
       defer { try? fm.removeItem(atPath: tempDir) }
 
@@ -256,7 +256,7 @@ struct TestRunner {
 
         let fm = FileManager.default
         try fm.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
-        fm.createFile(atPath: inputPath, contents: pdf)
+        _ = fm.createFile(atPath: inputPath, contents: pdf)
 
         defer { try? fm.removeItem(atPath: tempDir) }
 
