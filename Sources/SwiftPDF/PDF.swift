@@ -139,6 +139,60 @@ public struct PDF: Sendable {
     return try document.getPages().count
   }
 
+  // MARK: - Render Session (open PDF once, render many pages)
+
+  /// A render session that writes the PDF to disk once and renders pages from it.
+  /// Use this when rendering multiple pages to avoid re-writing the PDF for each page.
+  public struct RenderSession: @unchecked Sendable {
+    private let renderer: PDFRenderer
+    private let tempDir: String
+    private let inputPath: String
+    public let pageCount: Int
+    private let fileManager: FileManager
+
+    init(pdfData: Data) throws {
+      self.renderer = PDFRenderer()
+      try renderer.validateVips()
+
+      let document = try PDFDocument(data: pdfData)
+      self.pageCount = try document.getPages().count
+
+      self.fileManager = FileManager.default
+      self.tempDir = fileManager.temporaryDirectory.appendingPathComponent(UUID().uuidString).path
+      try fileManager.createDirectory(atPath: tempDir, withIntermediateDirectories: true)
+
+      self.inputPath = (tempDir as NSString).appendingPathComponent("input.pdf")
+      guard fileManager.createFile(atPath: inputPath, contents: pdfData) else {
+        throw PDFError.fileError("Cannot write temporary PDF file")
+      }
+    }
+
+    /// Render a single page to image data. Can be called repeatedly for different pages.
+    public func renderPage(at pageIndex: Int, dpi: Double = 144, format: ImageFormat = .png) throws -> Data {
+      guard pageIndex >= 0, pageIndex < pageCount else {
+        throw PDFError.invalidPageIndex(pageIndex)
+      }
+      let outputPath = (tempDir as NSString).appendingPathComponent("page\(pageIndex).\(format.fileExtension)")
+      try renderer.renderPage(pdfPath: inputPath, pageIndex: pageIndex, outputPath: outputPath, dpi: dpi, format: format)
+      defer { try? fileManager.removeItem(atPath: outputPath) }
+      guard let imageData = fileManager.contents(atPath: outputPath) else {
+        throw PDFError.renderError("Failed to read rendered image for page \(pageIndex)")
+      }
+      return imageData
+    }
+
+    /// Clean up temporary files. Call when done rendering.
+    public func cleanup() {
+      try? fileManager.removeItem(atPath: tempDir)
+    }
+  }
+
+  /// Create a render session for efficiently rendering multiple pages from the same PDF.
+  /// The PDF is written to disk once. Call `cleanup()` when done.
+  public func renderSession(pdfData: Data) throws -> RenderSession {
+    try RenderSession(pdfData: pdfData)
+  }
+
   // MARK: - Rendering (PDF → image via libvips)
 
   private var renderer: PDFRenderer { PDFRenderer() }
