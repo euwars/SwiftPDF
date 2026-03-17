@@ -139,12 +139,12 @@ public struct PDF: Sendable {
     return try document.getPages().count
   }
 
-  // MARK: - Rendering (PDF → PNG via libvips)
+  // MARK: - Rendering (PDF → image via libvips)
 
   private var renderer: PDFRenderer { PDFRenderer() }
 
-  /// Render a single page of a PDF to PNG data
-  public func renderPage(from pdfData: Data, at pageIndex: Int, dpi: Double = 144) throws -> Data {
+  /// Render a single page of a PDF to image data
+  public func renderPage(from pdfData: Data, at pageIndex: Int, dpi: Double = 144, format: ImageFormat = .png) throws -> Data {
     let renderer = self.renderer
     try renderer.validateVips()
 
@@ -161,22 +161,22 @@ public struct PDF: Sendable {
     defer { try? fileManager.removeItem(atPath: tempDir) }
 
     let inputPath = (tempDir as NSString).appendingPathComponent("input.pdf")
-    let outputPath = (tempDir as NSString).appendingPathComponent("page.png")
+    let outputPath = (tempDir as NSString).appendingPathComponent("page.\(format.fileExtension)")
 
     guard fileManager.createFile(atPath: inputPath, contents: pdfData) else {
       throw PDFError.fileError("Cannot write temporary PDF file")
     }
 
-    try renderer.renderPage(pdfPath: inputPath, pageIndex: pageIndex, outputPath: outputPath, dpi: dpi)
+    try renderer.renderPage(pdfPath: inputPath, pageIndex: pageIndex, outputPath: outputPath, dpi: dpi, format: format)
 
-    guard let pngData = fileManager.contents(atPath: outputPath) else {
-      throw PDFError.renderError("Failed to read rendered PNG")
+    guard let imageData = fileManager.contents(atPath: outputPath) else {
+      throw PDFError.renderError("Failed to read rendered image for page \(pageIndex)")
     }
-    return pngData
+    return imageData
   }
 
-  /// Render all pages of a PDF to PNG data
-  public func renderPages(pdfData: Data, dpi: Double = 144) throws -> [Data] {
+  /// Render all pages of a PDF to image data sequentially
+  public func renderPages(pdfData: Data, dpi: Double = 144, format: ImageFormat = .png) throws -> [Data] {
     let renderer = self.renderer
     try renderer.validateVips()
 
@@ -198,18 +198,18 @@ public struct PDF: Sendable {
 
     var results: [Data] = []
     for i in 0 ..< count {
-      let outputPath = (tempDir as NSString).appendingPathComponent("page\(i).png")
-      try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi)
-      guard let pngData = fileManager.contents(atPath: outputPath) else {
-        throw PDFError.renderError("Failed to read rendered PNG for page \(i)")
+      let outputPath = (tempDir as NSString).appendingPathComponent("page\(i).\(format.fileExtension)")
+      try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi, format: format)
+      guard let imageData = fileManager.contents(atPath: outputPath) else {
+        throw PDFError.renderError("Failed to read rendered image for page \(i)")
       }
-      results.append(pngData)
+      results.append(imageData)
     }
     return results
   }
 
-  /// Render all pages of a PDF to PNG data concurrently
-  public func renderPages(pdfData: Data, dpi: Double = 144, concurrency: Int? = nil) async throws -> [Data] {
+  /// Render all pages of a PDF to image data concurrently
+  public func renderPages(pdfData: Data, dpi: Double = 144, format: ImageFormat = .png, concurrency: Int? = nil) async throws -> [Data] {
     let renderer = self.renderer
     try renderer.validateVips()
 
@@ -235,13 +235,13 @@ public struct PDF: Sendable {
 
       for _ in 0 ..< min(maxConcurrency, count) {
         let i = nextIndex
-        let outputPath = (tempDir as NSString).appendingPathComponent("page\(i).png")
+        let outputPath = (tempDir as NSString).appendingPathComponent("page\(i).\(format.fileExtension)")
         group.addTask {
-          try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi)
-          guard let pngData = FileManager.default.contents(atPath: outputPath) else {
-            throw PDFError.renderError("Failed to read rendered PNG for page \(i)")
+          try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi, format: format)
+          guard let imageData = FileManager.default.contents(atPath: outputPath) else {
+            throw PDFError.renderError("Failed to read rendered image for page \(i)")
           }
-          return (i, pngData)
+          return (i, imageData)
         }
         nextIndex += 1
       }
@@ -252,13 +252,13 @@ public struct PDF: Sendable {
 
         if nextIndex < count {
           let i = nextIndex
-          let outputPath = (tempDir as NSString).appendingPathComponent("page\(i).png")
+          let outputPath = (tempDir as NSString).appendingPathComponent("page\(i).\(format.fileExtension)")
           group.addTask {
-            try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi)
-            guard let pngData = FileManager.default.contents(atPath: outputPath) else {
-              throw PDFError.renderError("Failed to read rendered PNG for page \(i)")
+            try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi, format: format)
+            guard let imageData = FileManager.default.contents(atPath: outputPath) else {
+              throw PDFError.renderError("Failed to read rendered image for page \(i)")
             }
-            return (i, pngData)
+            return (i, imageData)
           }
           nextIndex += 1
         }
@@ -268,8 +268,8 @@ public struct PDF: Sendable {
     }
   }
 
-  /// Render all pages of a PDF file to PNG files in the output directory
-  public func renderPages(inputPath: String, outputDirectory: String, dpi: Double = 144) throws -> [String] {
+  /// Render all pages of a PDF file to image files in the output directory
+  public func renderPages(inputPath: String, outputDirectory: String, dpi: Double = 144, format: ImageFormat = .png) throws -> [String] {
     let renderer = self.renderer
     try renderer.validateVips()
 
@@ -294,15 +294,15 @@ public struct PDF: Sendable {
     var outputPaths: [String] = []
     for i in 0 ..< count {
       let outputPath = (outputDirectory as NSString)
-        .appendingPathComponent("\(baseName)_page\(i + 1).png")
-      try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi)
+        .appendingPathComponent("\(baseName)_page\(i + 1).\(format.fileExtension)")
+      try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi, format: format)
       outputPaths.append(outputPath)
     }
     return outputPaths
   }
 
-  /// Render all pages of a PDF file to PNG files concurrently
-  public func renderPages(inputPath: String, outputDirectory: String, dpi: Double = 144, concurrency: Int? = nil) async throws -> [String] {
+  /// Render all pages of a PDF file to image files concurrently
+  public func renderPages(inputPath: String, outputDirectory: String, dpi: Double = 144, format: ImageFormat = .png, concurrency: Int? = nil) async throws -> [String] {
     let renderer = self.renderer
     try renderer.validateVips()
 
@@ -331,9 +331,9 @@ public struct PDF: Sendable {
       for _ in 0 ..< min(maxConcurrency, count) {
         let i = nextIndex
         let outputPath = (outputDirectory as NSString)
-          .appendingPathComponent("\(baseName)_page\(i + 1).png")
+          .appendingPathComponent("\(baseName)_page\(i + 1).\(format.fileExtension)")
         group.addTask {
-          try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi)
+          try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi, format: format)
           return (i, outputPath)
         }
         nextIndex += 1
@@ -346,9 +346,9 @@ public struct PDF: Sendable {
         if nextIndex < count {
           let i = nextIndex
           let outputPath = (outputDirectory as NSString)
-            .appendingPathComponent("\(baseName)_page\(i + 1).png")
+            .appendingPathComponent("\(baseName)_page\(i + 1).\(format.fileExtension)")
           group.addTask {
-            try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi)
+            try renderer.renderPage(pdfPath: inputPath, pageIndex: i, outputPath: outputPath, dpi: dpi, format: format)
             return (i, outputPath)
           }
           nextIndex += 1

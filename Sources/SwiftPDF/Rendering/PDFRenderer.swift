@@ -1,5 +1,30 @@
 import Foundation
 
+/// Output image format for PDF page rendering.
+public enum ImageFormat: Sendable {
+  /// PNG (lossless, larger files)
+  case png
+  /// JPEG with quality 1–100 (lossy, smaller files)
+  case jpeg(quality: Int = 85)
+
+  var fileExtension: String {
+    switch self {
+    case .png: "png"
+    case .jpeg: "jpg"
+    }
+  }
+
+  /// vips output suffix including save options (e.g. `[Q=85]` for JPEG)
+  func vipsSuffix(for path: String) -> String {
+    switch self {
+    case .png:
+      return path
+    case .jpeg(let quality):
+      return "\(path)[Q=\(quality)]"
+    }
+  }
+}
+
 struct PDFRenderer: Sendable {
   private static let searchPaths = [
     "/opt/homebrew/bin/vips",  // macOS Apple Silicon (Homebrew)
@@ -62,14 +87,14 @@ struct PDFRenderer: Sendable {
     }
   }
 
-  func renderPage(pdfPath: String, pageIndex: Int, outputPath: String, dpi: Double) throws {
+  func renderPage(pdfPath: String, pageIndex: Int, outputPath: String, dpi: Double, format: ImageFormat = .png) throws {
     let vipsURL = try resolveVips()
     let process = Process()
     process.executableURL = vipsURL
     process.arguments = [
       "copy",
       "\(pdfPath)[dpi=\(dpi),page=\(pageIndex)]",
-      outputPath,
+      format.vipsSuffix(for: outputPath),
     ]
     let errorPipe = Pipe()
     process.standardOutput = FileHandle.nullDevice
